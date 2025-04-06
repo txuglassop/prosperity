@@ -148,7 +148,7 @@ class MarketMakingStrategy(Strategy):
         super().__init__(symbol, limit)
 
         self.window = deque()
-        self.window_size = 100
+        self.window_size = 10
 
     @abstractmethod
     def get_true_value(state: TradingState) -> int:
@@ -254,18 +254,29 @@ class MarketMakingStrategy(Strategy):
 
 class RainforestResinStrategy(MarketMakingStrategy):
     def get_true_value(self, state):
-        return 0
+        return 10_000
 
+class KelpStrategy(MarketMakingStrategy):
+    def get_true_value(self, state):
+        order_depth = state.order_depths[self.symbol]
+        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
+        sell_orders = sorted(order_depth.sell_orders.items())
+
+        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
+        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
+
+        return round((hit_buy_price + hit_sell_price) / 2)
 
 class Trader:
     def __init__(self):
         limits = {
-            "KELP":10,
-            "RAINFOREST_RESIN":10
+            "KELP":50,
+            "RAINFOREST_RESIN":50
         }
 
         self.strategies = {symbol: clazz(symbol, limits[symbol]) for symbol, clazz in {
             "RAINFOREST_RESIN": RainforestResinStrategy,
+            "KELP": KelpStrategy
         }.items()}
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
