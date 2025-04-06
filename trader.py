@@ -144,13 +144,23 @@ class Strategy:
 
 
 class MarketMakingStrategy(Strategy):
-    def __init__(self, symbol: Symbol, limit: int, buy_spread = 1, sell_spread = 1) -> None:
+    def __init__(
+        self,
+        symbol: Symbol,
+        limit: int,
+        buy_spread = 1,  # premium charged on theo when we are in an excessively long/short position
+        sell_spread = 1,
+        buy_tolerance = 0.5, # our tolerance as to what constitutes an "excessively long/short position"
+        sell_tolerance = 0.5
+    ) -> None:
         super().__init__(symbol, limit)
 
         self.window = deque()
         self.window_size = 100
         self.buy_spread = buy_spread
         self.sell_spread = sell_spread
+        self.buy_tolerance = buy_tolerance
+        self.sell_tolerance = sell_tolerance
 
     @abstractmethod
     def get_true_value(state: TradingState) -> int:
@@ -183,9 +193,9 @@ class MarketMakingStrategy(Strategy):
         ###
 
         # if we already have a few of the asset, have a slightly lower max buy price
-        max_buy_price = true_value - self.buy_spread if position > self.limit * 0.5 else true_value
+        max_buy_price = true_value - self.buy_spread if position > self.limit * self.buy_tolerance else true_value
         # if we are already short a few, have a slightly higher min sell price
-        min_sell_price = true_value + self.sell_spread if position < self.limit * -0.5 else true_value
+        min_sell_price = true_value + self.sell_spread if position < self.limit * -self.sell_tolerance else true_value
 
         # go through all the price/volume in sell_orders
         for price, volume in sell_orders:
@@ -254,16 +264,18 @@ class MarketMakingStrategy(Strategy):
     def load(self, data: JSON) -> None:
         self.window = deque(data)
 
+
+
 class RainforestResinStrategy(MarketMakingStrategy):
-    def __init__(self, symbol, limit, buy_spread=1, sell_spread=1):
-        super().__init__(symbol, limit, buy_spread, sell_spread)
+    def __init__(self, symbol, limit, buy_spread=1, sell_spread=1, buy_tolerance=0.5, sell_tolerance=0.5):
+        super().__init__(symbol, limit, buy_spread, sell_spread, buy_tolerance, sell_tolerance)
 
     def get_true_value(self, state):
         return 10_000
 
 class KelpStrategy(MarketMakingStrategy):
-    def __init__(self, symbol, limit, buy_spread=2, sell_spread=2):
-        super().__init__(symbol, limit, buy_spread, sell_spread)
+    def __init__(self, symbol, limit, buy_spread=1, sell_spread=2, buy_tolerance=0, sell_tolerance=0.5):
+        super().__init__(symbol, limit, buy_spread, sell_spread, buy_tolerance, sell_tolerance)
 
     def get_true_value(self, state):
         order_depth = state.order_depths[self.symbol]
