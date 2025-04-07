@@ -7,6 +7,11 @@ import json
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
 
+##################################################################################################################################
+##################################################################################################################################
+################################################## LOGGER - NOT FOR ACTUAL TRADING ###############################################
+##################################################################################################################################
+##################################################################################################################################
 
 
 class Logger:
@@ -114,9 +119,23 @@ class Logger:
 
 logger = Logger()
 
+##################################################################################################################################
+##################################################################################################################################
+################################################### TRADING STRATEGIES ###########################################################
+##################################################################################################################################
+##################################################################################################################################
 
 
 class Strategy:
+    """
+    A generic trading class
+
+    need to define the act method for any instance of this class, which
+    defines how it takes in TradingState and makes trades
+
+    In any instance of this class, use the `self.buy` and `self.sell` to send
+    buy/sell orders when creating the `run` method.
+    """
     def __init__(self, symbol: str, limit: int) -> None:
         self.symbol = symbol
         self.limit = limit
@@ -144,6 +163,10 @@ class Strategy:
 
 
 class MarketMakingStrategy(Strategy):
+    """
+    A market making strategy. Sends buy/sell orders around a theo, given by the
+    `get_true_value` method
+    """
     def __init__(
         self,
         symbol: Symbol,
@@ -156,7 +179,7 @@ class MarketMakingStrategy(Strategy):
         super().__init__(symbol, limit)
 
         self.window = deque()
-        self.window_size = 100
+        self.window_size = 100 # sensitivity to limit positions
         self.buy_spread = buy_spread
         self.sell_spread = sell_spread
         self.buy_tolerance = buy_tolerance

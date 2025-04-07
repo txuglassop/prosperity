@@ -3,3 +3,5 @@ backtester/
 env/
 
 backtests/*
+
+__pycache__/
