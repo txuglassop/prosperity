@@ -409,41 +409,14 @@ class KelpStrategy(MarketMakingGLFTStrategy):
         vwa_bid = np.average(list(order_depth.buy_orders.keys()), weights=list(order_depth.buy_orders.values()))
         return (vwa_ask + vwa_bid) / 2
 
-# class KelpStrategy(MarketMakingStrategy):
-#     def __init__(self, symbol, limit, buy_spread=1, sell_spread=1, buy_tolerance=0.5, sell_tolerance=0.5):
-#         super().__init__(symbol, limit, buy_spread, sell_spread, buy_tolerance, sell_tolerance)
-
-#     def get_true_value(self, state):
-#         order_depth = state.order_depths[self.symbol]
-#         buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-#         sell_orders = sorted(order_depth.sell_orders.items())
-
-#         hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-#         hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-
-#         return round((hit_buy_price + hit_sell_price) / 2)
-
-
-class History():
-    def __init__(self):
-        self.price = deque()
-
-    def __len__(self):
-        return len(self.price)
-
 class SquidInkStrategy(Strategy):
     def __init__(self, symbol, limit):
         super().__init__(symbol, limit)
-        self.history = History()
-
-    def update_history(self, price):
-        self.history.price.append(price) 
-        if len(self.history.price) > 15: # history window
-            self.history.price.pop()
+        self.history = deque(maxlen=50) # set history window size here
 
     def get_weighted_average(self):
-        values = np.array(self.history.price)
-        weights = np.arange(1, len(self.history) + 1)
+        values = np.array(self.history)
+        # weights = np.arange(1, len(self.history) + 1)
         return round(np.mean(values))
         #return round(np.average(values, weights=weights))
 
@@ -458,10 +431,7 @@ class SquidInkStrategy(Strategy):
         hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
         hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
         avg_price = round((hit_buy_price + hit_sell_price) / 2)
-        self.update_history(avg_price)
-        
-        if len(self.history.price) == 0:
-            return
+        self.history.append(avg_price) 
 
         # Get data from history
         mean = self.get_weighted_average()
