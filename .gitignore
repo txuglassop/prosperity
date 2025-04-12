@@ -5,3 +5,5 @@ env/
 backtests/*
 
 __pycache__/
+
+local.py

@@ -165,7 +165,7 @@ class Strategy:
 
     def buy(self, price: int, quantity: int) -> None:
         """
-        Executes a (single) BUY order for this product.
+        Executes a BUY order for this product.
         Attempts to buy for the entire target quantity (without exceeding self.limit).
 
         :param price: Price level to use for the order
@@ -184,7 +184,7 @@ class Strategy:
 
     def sell(self, price: int, quantity: int) -> None:
         """
-        Executes a (single) SELL order for this product.
+        Executes a SELL order for this product.
         Attempts to sell for the entire target quantity (without exceeding self.limit).
 
         :param price: Price level to use for the order
@@ -200,42 +200,6 @@ class Strategy:
 
         self.orders.append(Order(self.symbol, price, -quantity))
         self.aggregate_sell_quantity += quantity
-
-    def force_buy(self, order_depth: OrderDepth, target_quantity: int) -> None:
-        """
-        Executes BUY orders for this product regardless of price.
-        Attempts to buy for the entire target quantity, using whatever price is on the market.
-
-        :param order_depth: Order depth object
-        :param quantity: Target quantity of the order (should be > 0)
-        """
-        target_quantity = round(target_quantity)
-        if target_quantity <= 0 or len(order_depth.sell_orders) == 0:
-            return
-        
-        for ask, quantity in sorted(order_depth.sell_orders.items(), key=lambda item: item[0]):
-            if target_quantity > 0:
-                buy_quantity = min(target_quantity, -quantity)
-                self.buy(ask, buy_quantity)
-                target_quantity -= buy_quantity
-
-    def force_sell(self, order_depth: OrderDepth, target_quantity: int) -> None:
-        """
-        Executes SELL orders for this product regardless of price.
-        Attempts to sell for the entire target quantity, using whatever price is on the market.
-
-        :param order_depth: Order depth object
-        :param quantity: Target quantity of the order (should be > 0)
-        """
-        target_quantity = round(target_quantity)
-        if target_quantity <= 0 or len(order_depth.buy_orders) == 0:
-            return
-                
-        for bid, quantity in sorted(order_depth.buy_orders.items(), key=lambda item: -item[0]):
-            if target_quantity > 0:
-                sell_quantity = min(target_quantity, quantity)
-                self.sell(bid, sell_quantity)
-                target_quantity -= sell_quantity
 
     def save(self) -> JSON:
         return None
@@ -452,9 +416,9 @@ class SquidInkStrategy(Strategy):
 
     def get_weighted_average(self):
         values = np.array(self.history)
-        # weights = np.arange(1, len(self.history) + 1)
-        return round(np.mean(values))
-        #return round(np.average(values, weights=weights))
+        #return round(np.mean(values))
+        weights = np.arange(1, len(self.history) + 1)
+        return round(np.average(values, weights=weights))
 
     def act(self, state: TradingState) -> None:
         base_value = 2000
@@ -561,6 +525,11 @@ class PicnicBasket1Strategy(Strategy):
         # best value 65
         buy_window = 65
         sell_window = 65
+
+        buy_window = 65 + 10 * position / self.limit 
+        sell_window = 65 - 10 * position / self.limit
+        
+
 
         if diff >= sell_window:
             # basket is overvalued - we go short
@@ -705,8 +674,8 @@ class JamStrategy(Strategy):
             return
         
         # we only enter a position if both baskets indicate yes!
-        buy_window = 110
-        sell_window = 80
+        buy_window = 50
+        sell_window = 50
         
         position = state.position.get(self.symbol, 0)
         to_buy = self.limit - position
