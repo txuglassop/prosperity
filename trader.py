@@ -175,7 +175,7 @@ class Strategy:
             logger.print(f"Invalid call: buy(price={price}, quantity={quantity}). Quantity should be greater than 0.")
             return
         
-        quantity = min(self.position + quantity, self.limit - self.aggregate_buy_quantity) - self.position
+        quantity = min(self.position + round(quantity), self.limit - self.aggregate_buy_quantity) - self.position
         if quantity == 0:
             return
 
@@ -194,7 +194,7 @@ class Strategy:
             logger.print(f"Invalid call: sell(price={price}, quantity={quantity}). Quantity should be greater than 0.")
             return
         
-        quantity = self.position - max(self.position - quantity, -self.limit + self.aggregate_sell_quantity)
+        quantity = self.position - max(self.position - round(quantity), -self.limit + self.aggregate_sell_quantity)
         if quantity == 0:
             return
 
@@ -232,7 +232,7 @@ class MarketMakingStrategy(Strategy):
         self.sell_tolerance = sell_tolerance
 
     @abstractmethod
-    def get_true_value(state: TradingState) -> int:
+    def get_true_value(self, state: TradingState) -> int:
         raise NotImplementedError()
     
     def act(self, state: TradingState) -> None:
@@ -334,10 +334,10 @@ class MarketMakingStrategy(Strategy):
         self.window = deque(data)
 
 class RainforestResinStrategy(MarketMakingStrategy):
-    def __init__(self, symbol, limit, buy_spread=1, sell_spread=1, buy_tolerance=0.5, sell_tolerance=0.5):
-        super().__init__(symbol, limit, buy_spread, sell_spread, buy_tolerance, sell_tolerance)
+    def __init__(self, symbol: Symbol, limit: int):
+        super().__init__(symbol, limit, buy_spread=1, sell_spread=1, buy_tolerance=0.5, sell_tolerance=0.5)
 
-    def get_true_value(self, state):
+    def get_true_value(self, state: TradingState) -> int:
         return 10_000
 
 class MarketMakingGLFTStrategy(Strategy):
@@ -529,7 +529,7 @@ class PicnicBasket1Strategy(Strategy):
         order_depth = state.order_depths[self.symbol]
 
         if diff >= sell_window:
-            # basket is obervalued - we go short
+            # basket is overvalued - we go short
             # take min price so we end up going as short as possible
             price = min(order_depth.buy_orders.keys())
             self.sell(price, to_sell)
@@ -770,12 +770,12 @@ class Trader:
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         logger.print(state.position)
 
+        orders: dict[Symbol, list[Order]] = {}
         conversions = 0
 
         old_trader_data = json.loads(state.traderData) if state.traderData != "" else {}
         new_trader_data = {}
 
-        orders = {}
         for symbol, strategy in self.strategies.items():
             if symbol in old_trader_data:
                 strategy.load(old_trader_data.get(symbol, None))
