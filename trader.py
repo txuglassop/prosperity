@@ -445,14 +445,16 @@ class KelpStrategy(MarketMakingGLFTStrategy):
         vwa_bid = np.average(list(order_depth.buy_orders.keys()), weights=list(order_depth.buy_orders.values()))
         return (vwa_ask + vwa_bid) / 2
 
+
+
 class SquidInkStrategy(Strategy):
     def __init__(self, symbol, limit):
         super().__init__(symbol, limit)
         self.history = deque(maxlen=50) # set history window size here
-
+    
     def get_weighted_average(self):
         values = np.array(self.history)
-        # weights = np.arange(1, len(self.history) + 1)
+        #weights = np.arange(1, len(self.history) + 1)
         return round(np.mean(values))
         #return round(np.average(values, weights=weights))
 
@@ -467,7 +469,9 @@ class SquidInkStrategy(Strategy):
         hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
         hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
         avg_price = round((hit_buy_price + hit_sell_price) / 2)
-        self.history.append(avg_price) 
+        self.history.append(avg_price)
+        if len(self.history) > 100:
+            self.history.popleft()
 
         # Get data from history
         mean = self.get_weighted_average()
@@ -475,7 +479,7 @@ class SquidInkStrategy(Strategy):
         # find out how many items we can buy/sell
         position = state.position.get(self.symbol, 0)
         pos_window_size = 120
-        pos_window_max_var = 153
+        pos_window_max_var = 200
         pos_window_center = self.limit*(base_value - mean)/pos_window_max_var
         pos_window_bottom = max(-self.limit, pos_window_center-pos_window_size/2)
         pos_window_top = min(self.limit, pos_window_center+pos_window_size/2)
@@ -488,15 +492,15 @@ class SquidInkStrategy(Strategy):
 
         prop_limit = position/self.limit
         if prop_limit >= 0:
-            sell_limit_factor = max((1-prop_limit)**2,0.4)
+            sell_limit_factor = max((1-prop_limit)**6,0)
             buy_limit_factor = 1 + sell_limit_factor
         else:
-            buy_limit_factor = max((1+prop_limit)**2,0.4)
+            buy_limit_factor = max((1+prop_limit)**6,0)
             sell_limit_factor = 1 + buy_limit_factor
         
         
-        buy_buffer = 4
-        buy_base_value_diff_factor = 2
+        buy_buffer = 5
+        buy_base_value_diff_factor = 3.75
         buy_weighting = 1+(buy_base_value_diff_factor*(hit_sell_price/base_value-1))
         
         # Smaller buy buffer means we buy more!!!
@@ -505,8 +509,8 @@ class SquidInkStrategy(Strategy):
         adj_buy_buffer = buy_buffer*buy_weighting*buy_limit_factor
         best_buy_price = round(mean - adj_buy_buffer)
         
-        sell_buffer = 4
-        sell_base_value_diff_factor = 2
+        sell_buffer = 5
+        sell_base_value_diff_factor = 3.75
         sell_weighting = 1-(sell_base_value_diff_factor*(hit_buy_price/base_value-1))
         
         # Smaller sell buffer means we sell more!!!
@@ -524,7 +528,6 @@ class SquidInkStrategy(Strategy):
             popular_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
             price = max(best_sell_price, popular_sell_price - 1)
             self.sell(price, to_sell) 
-
 
 
 class PicnicBasket1Strategy(Strategy):
