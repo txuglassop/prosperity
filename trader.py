@@ -561,9 +561,9 @@ class PicnicBasket1Strategy(Strategy):
         to_sell = self.limit + position
         order_depth = state.order_depths[self.symbol]
 
-        # best value 65
-        buy_window = 65
-        sell_window = 65
+        # best value 66
+        buy_window = 66
+        sell_window = 66
 
         if diff >= sell_window:
             # basket is overvalued - we go short
@@ -604,9 +604,9 @@ class PicnicBasket2Strategy(Strategy):
 
         diff = pb2 - 4*croissants - 2*jams
         
-        # best value 60
-        buy_window = 60
-        sell_window = 60
+        # best value 62
+        buy_window = 62
+        sell_window = 62
         
         position = state.position.get(self.symbol, 0)
         to_buy = self.limit - position
@@ -653,7 +653,7 @@ class CroissantStrategy(Strategy):
         diff2 = pb2 - 4*croissants - 2*jams
 
         # if diff1 and diff2 imply different things about the underlying...
-        # do absolutely fucking nothing!
+        # do absolutely nothing!
         if (diff1 > 0 and diff2 < 0) or (diff1 < 0 and diff2 > 0):
             return
         
@@ -703,7 +703,7 @@ class JamStrategy(Strategy):
         diff2 = pb2 - 4*croissants - 2*jams
 
         # if diff1 and diff2 imply different things about the underlying...
-        # do absolutely fucking nothing!
+        # do absolutely nothing!
         if (diff1 > 0 and diff2 < 0) or (diff1 < 0 and diff2 > 0):
             return
         
@@ -716,6 +716,8 @@ class JamStrategy(Strategy):
         to_sell = self.limit + position
         order_depth = state.order_depths[self.symbol]
 
+        
+        
         if diff1 >= buy_window and diff2 >= buy_window:
             # jam is undervalued - we go long
             price = max(order_depth.buy_orders.keys())
