@@ -236,11 +236,10 @@ class RainforestResinStrategy(Strategy):
         buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
         sell_orders = sorted(order_depth.sell_orders.items())
         
-        position = state.position.get(self.symbol, 0)
-        to_buy = self.limit - position
-        to_sell = self.limit + position
+        to_buy = self.limit - self.position
+        to_sell = self.limit + self.position
 
-        self.window.append(abs(position) == self.limit)
+        self.window.append(abs(self.position) == self.limit)
 
         ### Liquidity actions
         # if we've observed 10 periods AND 5 of these times we've been at our limit AND the most recent period was at the limit
@@ -251,7 +250,7 @@ class RainforestResinStrategy(Strategy):
         ### Define acceptable buy and sell prices
         max_buy_price = self.true_value
         min_sell_price = self.true_value
-        inventory_ratio = position / self.limit
+        inventory_ratio = self.position / self.limit
 
         # Adjust acceptable prices based on inventory
         if inventory_ratio > self.buy_tolerance:
@@ -414,17 +413,16 @@ class SquidInkStrategy(Strategy):
         mean = np.mean(self.window)
         
         # Find out how many items we can buy/sell
-        position = state.position.get(self.symbol, 0)
         pos_window_size = 120
         pos_window_max_var = 200
         pos_window_center = self.limit * (base_value - mean) / pos_window_max_var
         pos_window_bottom = max(-self.limit, pos_window_center - pos_window_size / 2)
         pos_window_top = min(self.limit, pos_window_center + pos_window_size / 2)
         
-        to_buy = max(pos_window_top - position, 0)
-        to_sell = max(-pos_window_bottom + position, 0)
+        to_buy = max(pos_window_top - self.position, 0)
+        to_sell = max(-pos_window_bottom + self.position, 0)
         
-        inventory_ratio = position / self.limit
+        inventory_ratio = self.position / self.limit
         if inventory_ratio >= 0:
             sell_limit_factor = max((1 - inventory_ratio) ** 6,0)
             buy_limit_factor = 1 + sell_limit_factor
@@ -484,6 +482,7 @@ class PicnicBasket1Strategy(Strategy):
 
 
     def act(self, state: TradingState):
+        order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
         
@@ -492,12 +491,10 @@ class PicnicBasket1Strategy(Strategy):
         jams = self.find_avg_price(state, 'JAMS')
         pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
 
-        diff = pb1 - 6*croissants - 3*jams - djembes
+        diff = pb1 - 6 * croissants - 3 * jams - djembes
 
-        position = state.position.get(self.symbol, 0)
-        to_buy = self.limit - position
-        to_sell = self.limit + position
-        order_depth = state.order_depths[self.symbol]
+        to_buy = self.limit - self.position
+        to_sell = self.limit + self.position
 
         # best value 66
         buy_window = 66
@@ -529,6 +526,7 @@ class PicnicBasket2Strategy(Strategy):
         return round(np.mean([hit_buy_price, hit_sell_price]))
 
     def act(self, state: TradingState):
+        order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
         
@@ -536,16 +534,14 @@ class PicnicBasket2Strategy(Strategy):
         jams = self.find_avg_price(state, 'JAMS')
         pb2 = self.find_avg_price(state, 'PICNIC_BASKET2')
 
-        diff = pb2 - 4*croissants - 2*jams
+        diff = pb2 - 4 * croissants - 2 * jams
         
         # best value 62
         buy_window = 62
         sell_window = 62
         
-        position = state.position.get(self.symbol, 0)
-        to_buy = self.limit - position
-        to_sell = self.limit + position
-        order_depth = state.order_depths[self.symbol]
+        to_buy = self.limit - self.position
+        to_sell = self.limit + self.position
 
         if diff >= sell_window:
             # basket is obervalued - we go short
@@ -573,6 +569,7 @@ class CroissantStrategy(Strategy):
         return round(np.mean([hit_buy_price, hit_sell_price]))
 
     def act(self, state: TradingState):
+        order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
         
@@ -582,8 +579,8 @@ class CroissantStrategy(Strategy):
         pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
         pb2 = self.find_avg_price(state, 'PICNIC_BASKET2')
 
-        diff1 = pb1 - 6*croissants - 3*jams - djembes
-        diff2 = pb2 - 4*croissants - 2*jams
+        diff1 = pb1 - 6 * croissants - 3 * jams - djembes
+        diff2 = pb2 - 4 * croissants - 2 * jams
 
         # if diff1 and diff2 imply different things about the underlying...
         # do absolutely nothing!
@@ -594,10 +591,8 @@ class CroissantStrategy(Strategy):
         buy_window = 50
         sell_window = 50
         
-        position = state.position.get(self.symbol, 0)
-        to_buy = self.limit - position
-        to_sell = self.limit + position
-        order_depth = state.order_depths[self.symbol]
+        to_buy = self.limit - self.position
+        to_sell = self.limit + self.position
 
         if diff1 >= buy_window and diff2 >= buy_window:
             # croissant is undervalued - we go long
@@ -623,14 +618,15 @@ class JamStrategy(Strategy):
         return round(np.mean([hit_buy_price, hit_sell_price]))
 
     def act(self, state: TradingState):
+        order_depth = state.order_depths[self.symbol]
         croissants = self.find_avg_price(state, 'CROISSANTS')
         djembes = self.find_avg_price(state, 'DJEMBES')
         jams = self.find_avg_price(state, 'JAMS')
         pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
         pb2 = self.find_avg_price(state, 'PICNIC_BASKET2')
 
-        diff1 = pb1 - 6*croissants - 3*jams - djembes
-        diff2 = pb2 - 4*croissants - 2*jams
+        diff1 = pb1 - 6 * croissants - 3 * jams - djembes
+        diff2 = pb2 - 4 * croissants - 2 * jams
 
         # if diff1 and diff2 imply different things about the underlying...
         # do absolutely nothing!
@@ -641,13 +637,9 @@ class JamStrategy(Strategy):
         buy_window = 110
         sell_window = 80
         
-        position = state.position.get(self.symbol, 0)
-        to_buy = self.limit - position
-        to_sell = self.limit + position
-        order_depth = state.order_depths[self.symbol]
+        to_buy = self.limit - self.position
+        to_sell = self.limit + self.position
 
-        
-        
         if diff1 >= buy_window and diff2 >= buy_window:
             # jam is undervalued - we go long
             price = max(order_depth.buy_orders.keys())
@@ -676,6 +668,7 @@ class DjembeStrategy(Strategy):
         Since Djembe is only connected to picnic basket 1, we only need to consider the
         difference between the underlying's of PB1 and the market price of PB1
         """
+        order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
         
@@ -684,16 +677,14 @@ class DjembeStrategy(Strategy):
         jams = self.find_avg_price(state, 'JAMS')
         pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
 
-        diff = pb1 - 6*croissants - 3*jams - djembes
+        diff = pb1 - 6 * croissants - 3 * jams - djembes
 
         # best value
         buy_window = 90
         sell_window = 90
         
-        position = state.position.get(self.symbol, 0)
-        to_buy = self.limit - position
-        to_sell = self.limit + position
-        order_depth = state.order_depths[self.symbol]
+        to_buy = self.limit - self.position
+        to_sell = self.limit + self.position
 
         if diff >= buy_window:
             # djembe is undervalued - we go long
