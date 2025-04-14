@@ -203,6 +203,16 @@ class Strategy:
         self.orders.append(Order(self.symbol, price, -sell_quantity))
         self.aggregate_sell_quantity += sell_quantity
 
+    def get_avg_price(self, order_depth: OrderDepth) -> float:
+        """
+        Calculates the average price of the given order depth using the buy/sell orders with the most volume.
+
+        :param order_depth: The `OrderDepth` object for a particular symbol
+        """
+        popular_buy_price = max(order_depth.buy_orders.items(), key=lambda tup: tup[1])[0]
+        popular_sell_price = min(order_depth.sell_orders.items(), key=lambda tup: tup[1])[0]
+        return (popular_buy_price + popular_sell_price) / 2
+
     def save(self) -> JSON:
         return None
 
@@ -467,29 +477,18 @@ class SquidInkStrategy(Strategy):
         self.window = deque(data, maxlen=self.window_size)
 
 class PicnicBasket1Strategy(Strategy):
-    def __init__(self, symbol, limit):
+    def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
-
-    def find_avg_price(self, state: TradingState, symbol: str) -> int:
-        order_depth = state.order_depths[symbol]
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
-
-        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-
-        return round(np.mean([hit_buy_price, hit_sell_price]))
-
 
     def act(self, state: TradingState):
         order_depth = state.order_depths[self.symbol]
-        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
+        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1']):
             return
-        
-        croissants = self.find_avg_price(state, 'CROISSANTS')
-        djembes = self.find_avg_price(state, 'DJEMBES')
-        jams = self.find_avg_price(state, 'JAMS')
-        pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
+
+        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
+        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
+        jams = self.get_avg_price(state.order_depths['JAMS'])
+        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
 
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
@@ -515,24 +514,14 @@ class PicnicBasket2Strategy(Strategy):
     def __init__(self, symbol, limit):
         super().__init__(symbol, limit)
 
-    def find_avg_price(self, state: TradingState, symbol: str) -> int:
-        order_depth = state.order_depths[symbol]
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
-
-        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-
-        return round(np.mean([hit_buy_price, hit_sell_price]))
-
     def act(self, state: TradingState):
         order_depth = state.order_depths[self.symbol]
-        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
+        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'JAMS', 'PICNIC_BASKET2']):
             return
         
-        croissants = self.find_avg_price(state, 'CROISSANTS')
-        jams = self.find_avg_price(state, 'JAMS')
-        pb2 = self.find_avg_price(state, 'PICNIC_BASKET2')
+        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
+        jams = self.get_avg_price(state.order_depths['JAMS'])
+        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
 
         diff = pb2 - 4 * croissants - 2 * jams
         
@@ -555,29 +544,19 @@ class PicnicBasket2Strategy(Strategy):
             self.buy(price, to_buy)
 
 class CroissantStrategy(Strategy):
-    def __init__(self, symbol, limit):
+    def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
-
-    def find_avg_price(self, state: TradingState, symbol: str) -> int:
-        order_depth = state.order_depths[symbol]
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
-
-        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-
-        return round(np.mean([hit_buy_price, hit_sell_price]))
 
     def act(self, state: TradingState):
         order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
         
-        croissants = self.find_avg_price(state, 'CROISSANTS')
-        djembes = self.find_avg_price(state, 'DJEMBES')
-        jams = self.find_avg_price(state, 'JAMS')
-        pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
-        pb2 = self.find_avg_price(state, 'PICNIC_BASKET2')
+        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
+        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
+        jams = self.get_avg_price(state.order_depths['JAMS'])
+        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
 
         diff1 = pb1 - 6 * croissants - 3 * jams - djembes
         diff2 = pb2 - 4 * croissants - 2 * jams
@@ -604,26 +583,19 @@ class CroissantStrategy(Strategy):
             self.sell(price - 1, to_sell)
         
 class JamStrategy(Strategy):
-    def __init__(self, symbol, limit):
+    def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
-
-    def find_avg_price(self, state: TradingState, symbol: str) -> int:
-        order_depth = state.order_depths[symbol]
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
-
-        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-
-        return round(np.mean([hit_buy_price, hit_sell_price]))
 
     def act(self, state: TradingState):
         order_depth = state.order_depths[self.symbol]
-        croissants = self.find_avg_price(state, 'CROISSANTS')
-        djembes = self.find_avg_price(state, 'DJEMBES')
-        jams = self.find_avg_price(state, 'JAMS')
-        pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
-        pb2 = self.find_avg_price(state, 'PICNIC_BASKET2')
+        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
+            return
+
+        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
+        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
+        jams = self.get_avg_price(state.order_depths['JAMS'])
+        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
 
         diff1 = pb1 - 6 * croissants - 3 * jams - djembes
         diff2 = pb2 - 4 * croissants - 2 * jams
@@ -650,18 +622,8 @@ class JamStrategy(Strategy):
             self.sell(price, to_sell)
 
 class DjembeStrategy(Strategy):
-    def __init__(self, symbol, limit):
+    def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
-
-    def find_avg_price(self, state: TradingState, symbol: str) -> int:
-        order_depth = state.order_depths[symbol]
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
-
-        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-
-        return round(np.mean([hit_buy_price, hit_sell_price]))
 
     def act(self, state: TradingState):
         """
@@ -669,14 +631,14 @@ class DjembeStrategy(Strategy):
         difference between the underlying's of PB1 and the market price of PB1
         """
         order_depth = state.order_depths[self.symbol]
-        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
+        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1']):
             return
         
-        croissants = self.find_avg_price(state, 'CROISSANTS')
-        djembes = self.find_avg_price(state, 'DJEMBES')
-        jams = self.find_avg_price(state, 'JAMS')
-        pb1 = self.find_avg_price(state, 'PICNIC_BASKET1')
-
+        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
+        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
+        jams = self.get_avg_price(state.order_depths['JAMS'])
+        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
         # best value
