@@ -659,7 +659,7 @@ class DjembeStrategy(Strategy):
 
 class BlackScholes:
     """
-    Blach Scholes equations for call options.
+    Black Scholes equations for call options.
     https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
 
     Assumes risk-free interest rate is 0%.
