@@ -1,3 +1,4 @@
+from statistics import NormalDist
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, TypeAlias
 from collections import deque
@@ -702,6 +703,65 @@ class DjembeStrategy(Strategy):
             # djembe is overvalued - we go short
             price = min(order_depth.sell_orders.keys())
             self.sell(price, to_sell)
+
+class BlackScholes:
+    """
+    Blach Scholes equations for call options.
+    https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
+
+    Assumes risk-free interest rate is 0%.
+    """
+    @staticmethod
+    def call_price(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
+        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d2 = d1 - volatility * sqrt(time_to_expiry)
+        return spot * NormalDist().cdf(d1) - strike * NormalDist().cdf(d2)
+    
+    @staticmethod
+    def delta(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
+        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        return NormalDist().cdf(d1)
+    
+    @staticmethod
+    def gamma(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
+        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        return NormalDist().pdf(d1) / (spot * volatility * sqrt(time_to_expiry))
+
+    @staticmethod
+    def vega(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
+        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        return spot * NormalDist().pdf(d1) * sqrt(time_to_expiry)
+    
+    @staticmethod
+    def theta(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
+        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        return -(spot * NormalDist().pdf(d1) * volatility) / (2 * sqrt(time_to_expiry))
+    
+    @staticmethod
+    def rho(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
+        d2 = (log(spot) - log(strike) - (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        return strike * time_to_expiry * NormalDist().cdf(d2)
+
+    @staticmethod
+    def implied_volatility(call_price: float, spot: float, strike: float, time_to_expiry: float, max_iterations=200, tolerance=1e-10) -> float:
+        low_vol = 0.01
+        high_vol = 1.0
+
+        # Use mid point as initial guess
+        volatility = (low_vol + high_vol) / 2.0 
+
+        for _ in range(max_iterations):
+            estimated_price = BlackScholes.call_price(spot, strike, time_to_expiry, volatility)
+            diff = estimated_price - call_price
+            if abs(diff) < tolerance:
+                break
+            elif diff > 0:
+                high_vol = volatility
+            else:
+                low_vol = volatility
+            volatility = (low_vol + high_vol) / 2.0
+
+        return volatility
 
 class Trader:
     def __init__(self):
