@@ -133,7 +133,7 @@ class Strategy:
     """
     A generic trading class.
 
-    Need to implement the act method for any instance of this class, which defines how it takes in
+    Need to implement the `act()` method for any instance of this class, which defines how it takes in
     `TradingState` and makes trades.
 
     Use the following methods to buy/sell orders: `self.buy()`, `self.sell()`
@@ -154,6 +154,7 @@ class Strategy:
     def run(self, state: TradingState) -> list[Order]:
         self.orders = []
         self.position = state.position.get(self.symbol, 0)
+        self.order_depths = state.order_depths
         self.aggregate_buy_quantity = 0
         self.aggregate_sell_quantity = 0
 
@@ -203,14 +204,25 @@ class Strategy:
         self.orders.append(Order(self.symbol, price, -sell_quantity))
         self.aggregate_sell_quantity += sell_quantity
 
-    def get_avg_price(self, order_depth: OrderDepth) -> float:
+    def get_avg_price(self, symbol: Symbol) -> float:
         """
-        Calculates the average price of the given order depth using the buy/sell orders with the most volume.
+        Calculates the average price of the given symbol using the buy/sell orders with the most volume.
+
+        Please check that the symbol exists in `state.order_depths` prior to calling this method.
 
         :param order_depth: The `OrderDepth` object for a particular symbol
         """
-        popular_buy_price = max(order_depth.buy_orders.items(), key=lambda tup: tup[1])[0]
-        popular_sell_price = min(order_depth.sell_orders.items(), key=lambda tup: tup[1])[0]
+        buy_orders = self.order_depths[symbol].buy_orders
+        sell_orders = self.order_depths[symbol].sell_orders
+
+        if len(buy_orders) == 0:
+            return min(sell_orders.keys())
+        
+        if len(sell_orders) == 0:
+            return max(buy_orders.keys())
+
+        popular_buy_price = max(buy_orders.items(), key=lambda tup: tup[1])[0]
+        popular_sell_price = min(sell_orders.items(), key=lambda tup: tup[1])[0]
         return (popular_buy_price + popular_sell_price) / 2
 
     def save(self) -> JSON:
@@ -485,10 +497,10 @@ class PicnicBasket1Strategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1']):
             return
 
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        croissants = self.get_avg_price('CROISSANTS')
+        djembes = self.get_avg_price('DJEMBES')
+        jams = self.get_avg_price('JAMS')
+        pb1 = self.get_avg_price('PICNIC_BASKET1')
 
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
@@ -519,9 +531,9 @@ class PicnicBasket2Strategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'JAMS', 'PICNIC_BASKET2']):
             return
         
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
+        croissants = self.get_avg_price('CROISSANTS')
+        jams = self.get_avg_price('JAMS')
+        pb2 = self.get_avg_price('PICNIC_BASKET2')
 
         diff = pb2 - 4 * croissants - 2 * jams
         
@@ -552,11 +564,11 @@ class CroissantStrategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
         
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
-        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
+        croissants = self.get_avg_price('CROISSANTS')
+        djembes = self.get_avg_price('DJEMBES')
+        jams = self.get_avg_price('JAMS')
+        pb1 = self.get_avg_price('PICNIC_BASKET1')
+        pb2 = self.get_avg_price('PICNIC_BASKET2')
 
         diff1 = pb1 - 6 * croissants - 3 * jams - djembes
         diff2 = pb2 - 4 * croissants - 2 * jams
@@ -591,11 +603,11 @@ class JamStrategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
 
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
-        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
+        croissants = self.get_avg_price('CROISSANTS')
+        djembes = self.get_avg_price('DJEMBES')
+        jams = self.get_avg_price('JAMS')
+        pb1 = self.get_avg_price('PICNIC_BASKET1')
+        pb2 = self.get_avg_price('PICNIC_BASKET2')
 
         diff1 = pb1 - 6 * croissants - 3 * jams - djembes
         diff2 = pb2 - 4 * croissants - 2 * jams
@@ -634,10 +646,10 @@ class DjembeStrategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1']):
             return
         
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        croissants = self.get_avg_price('CROISSANTS')
+        djembes = self.get_avg_price('DJEMBES')
+        jams = self.get_avg_price('JAMS')
+        pb1 = self.get_avg_price('PICNIC_BASKET1')
         
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
@@ -666,37 +678,37 @@ class BlackScholes:
     """
     @staticmethod
     def call_price(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         d2 = d1 - volatility * sqrt(time_to_expiry)
         return spot * NormalDist().cdf(d1) - strike * NormalDist().cdf(d2)
     
     @staticmethod
     def delta(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return NormalDist().cdf(d1)
     
     @staticmethod
     def gamma(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return NormalDist().pdf(d1) / (spot * volatility * sqrt(time_to_expiry))
 
     @staticmethod
     def vega(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return spot * NormalDist().pdf(d1) * sqrt(time_to_expiry)
     
     @staticmethod
     def theta(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return -(spot * NormalDist().pdf(d1) * volatility) / (2 * sqrt(time_to_expiry))
     
     @staticmethod
     def rho(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d2 = (log(spot) - log(strike) - (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d2 = (log(spot / strike) - (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return strike * time_to_expiry * NormalDist().cdf(d2)
 
     @staticmethod
-    def implied_volatility(call_price: float, spot: float, strike: float, time_to_expiry: float, max_iterations=200, tolerance=1e-10) -> float:
+    def implied_volatility(call_price: float, spot: float, strike: float, time_to_expiry: float, max_iterations=300, tolerance=1e-12) -> float:
         low_vol = 0.01
         high_vol = 1.0
 
@@ -716,39 +728,155 @@ class BlackScholes:
 
         return volatility
 
+target_volcanic_rock_position = 0
+
+class VolcanicRockVoucherStrategy(Strategy):
+    def __init__(self, symbol_base: Symbol, strike: int, limit: int, day: int, mean_volatility: float, window_size=50, z_score_threshold=5):
+        super().__init__(f"{symbol_base}_{strike}", limit)
+        self.strike = strike
+        self.starting_time_to_expire = (8 - day) / 365
+        self.mean_volatility = mean_volatility
+        self.window_size = window_size
+        self.window = deque(maxlen=window_size)
+        self.z_score_threshold = z_score_threshold
+    
+    def act(self, state: TradingState) -> None:
+        time_to_expiry = self.starting_time_to_expire - state.timestamp / 1_000_000 / 365
+
+        if any(symbol not in state.order_depths for symbol in ['VOLCANIC_ROCK', self.symbol]):
+            return
+        
+        global target_volcanic_rock_position
+        
+        buy_orders = self.order_depths[self.symbol].buy_orders
+        sell_orders = self.order_depths[self.symbol].sell_orders
+
+        volcanic_rock_price = self.get_avg_price('VOLCANIC_ROCK')
+        volcanic_rock_voucher_price = self.get_avg_price(self.symbol)
+
+        implied_vol = BlackScholes.implied_volatility(volcanic_rock_voucher_price, volcanic_rock_price, self.strike, time_to_expiry)
+
+        self.window.append(implied_vol)
+        if len(self.window) < self.window_size:
+            return
+
+        vol_z_score = (implied_vol - self.mean_volatility) / np.std(self.window)
+
+        delta = BlackScholes.delta(volcanic_rock_price, self.strike, time_to_expiry, implied_vol)
+
+        if vol_z_score > self.z_score_threshold and len(buy_orders) > 0:
+            target_position = -self.limit
+        
+            best_bid, best_bid_quantity = sorted(buy_orders.items(), key=lambda item: -item[0])[0]
+            target_quantity = abs(target_position - self.position)
+            take_quantity = min(target_quantity, abs(best_bid_quantity))
+            make_quantity = target_quantity - take_quantity
+
+            self.sell(best_bid, take_quantity)
+            self.sell(best_bid, make_quantity)
+
+            position_after_take = self.position - take_quantity
+            target_volcanic_rock_position += -delta * position_after_take
+
+        elif vol_z_score < -self.z_score_threshold and len(sell_orders) > 0:
+            target_position = self.limit
+            
+            best_ask, best_ask_quantity = sorted(sell_orders.items(), key=lambda item: item[0])[0]
+            target_quantity = abs(target_position - self.position)
+            take_quantity = min(target_quantity, abs(best_ask_quantity))
+            make_quantity = target_quantity - take_quantity
+
+            self.buy(best_ask, take_quantity)
+            self.buy(best_ask, make_quantity)
+
+            position_after_take = self.position + take_quantity
+            target_volcanic_rock_position += -delta * position_after_take
+
+        else:
+            target_volcanic_rock_position += -delta * self.position
+
+
+class VolcanicRockStrategy(Strategy):
+    def __init__(self, symbol: Symbol, limit: int):
+        super().__init__(symbol, limit)
+
+    def act(self, state: TradingState) -> None:
+        global target_volcanic_rock_position
+
+        target_volcanic_rock_position = round(target_volcanic_rock_position)
+
+        if (target_volcanic_rock_position == self.position):
+            return
+        
+        buy_orders = self.order_depths[self.symbol].buy_orders
+        sell_orders = self.order_depths[self.symbol].sell_orders
+        
+        target_quantity = target_volcanic_rock_position - self.position
+
+        if target_quantity > 0:
+            best_ask = min(sell_orders.keys())
+            self.buy(best_ask, abs(target_quantity))
+        elif target_quantity < 0:
+            best_bid = max(buy_orders.keys())
+            self.sell(best_bid, abs(target_quantity))
+
 class Trader:
     def __init__(self):
-        limits = {
-            "RAINFOREST_RESIN":50,
-            "KELP":50,
-            "SQUID_INK":50,
-            "CROISSANTS":250,
-            "JAMS":350,
-            "DJEMBES":60,
-            "PICNIC_BASKET1":60,
-            "PICNIC_BASKET2":100,
-            "VOLCANIC_ROCK": 400,
-            "VOLCANIC_ROCK_VOUCHER_9500": 200,
-            "VOLCANIC_ROCK_VOUCHER_9750": 200,
-            "VOLCANIC_ROCK_VOUCHER_10000": 200,
-            "VOLCANIC_ROCK_VOUCHER_10250": 200,
-            "VOLCANIC_ROCK_VOUCHER_10500": 200,
-        }
+        day = 2
 
-        self.strategies = {symbol: clazz(symbol, limits[symbol]) for symbol, clazz in {
-            "RAINFOREST_RESIN": RainforestResinStrategy,
-            "KELP": KelpStrategy,
-            "SQUID_INK": SquidInkStrategy,
-            "CROISSANTS": CroissantStrategy,
-            "JAMS": JamStrategy,
-            "DJEMBES": DjembeStrategy,
-            "PICNIC_BASKET1": PicnicBasket1Strategy,
-            "PICNIC_BASKET2": PicnicBasket2Strategy
-        }.items()}
+        strategies = [
+            RainforestResinStrategy("RAINFOREST_RESIN", limit=50),
+            KelpStrategy("KELP", limit=50),
+            SquidInkStrategy("SQUID_INK", limit=50),
+            CroissantStrategy("CROISSANTS", limit=250),
+            JamStrategy("JAMS", limit=350),
+            DjembeStrategy("DJEMBES", limit=60),
+            PicnicBasket1Strategy("PICNIC_BASKET1", limit=60),
+            PicnicBasket2Strategy("PICNIC_BASKET2", limit=100),
+            VolcanicRockVoucherStrategy("VOLCANIC_ROCK_VOUCHER", strike=10_500, limit=200, day=day, mean_volatility=0.15665158192657014),
+            VolcanicRockVoucherStrategy("VOLCANIC_ROCK_VOUCHER", strike=10_250, limit=200, day=day, mean_volatility=0.1535586155293653),
+            VolcanicRockVoucherStrategy("VOLCANIC_ROCK_VOUCHER", strike=10_000, limit=200, day=day, mean_volatility=0.16402082308902124),
+            VolcanicRockVoucherStrategy("VOLCANIC_ROCK_VOUCHER", strike=9_750, limit=200, day=day, mean_volatility=0.17900759975610525),
+            VolcanicRockVoucherStrategy("VOLCANIC_ROCK_VOUCHER", strike=9_500, limit=200, day=day, mean_volatility=0.1622406492221995),
+            VolcanicRockStrategy("VOLCANIC_ROCK", limit=400),
+        ]
+
+        self.strategies = {strategy.symbol: strategy for strategy in strategies}
+
+        # limits = {
+        #     "RAINFOREST_RESIN":50,
+        #     "KELP":50,
+        #     "SQUID_INK":50,
+        #     "CROISSANTS":250,
+        #     "JAMS":350,
+        #     "DJEMBES":60,
+        #     "PICNIC_BASKET1":60,
+        #     "PICNIC_BASKET2":100,
+        #     "VOLCANIC_ROCK": 400,
+        #     "VOLCANIC_ROCK_VOUCHER_9500": 200,
+        #     "VOLCANIC_ROCK_VOUCHER_9750": 200,
+        #     "VOLCANIC_ROCK_VOUCHER_10000": 200,
+        #     "VOLCANIC_ROCK_VOUCHER_10250": 200,
+        #     "VOLCANIC_ROCK_VOUCHER_10500": 200,
+        # }
+
+        # self.strategies = {symbol: clazz(symbol, limits[symbol]) for symbol, clazz in {
+        #     "RAINFOREST_RESIN": RainforestResinStrategy,
+        #     "KELP": KelpStrategy,
+        #     "SQUID_INK": SquidInkStrategy,
+        #     "CROISSANTS": CroissantStrategy,
+        #     "JAMS": JamStrategy,
+        #     "DJEMBES": DjembeStrategy,
+        #     "PICNIC_BASKET1": PicnicBasket1Strategy,
+        #     "PICNIC_BASKET2": PicnicBasket2Strategy
+        # }.items()}
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         orders: dict[Symbol, list[Order]] = {}
         conversions = 0
+        
+        global target_volcanic_rock_position
+        target_volcanic_rock_position = 0
 
         old_trader_data = json.loads(state.traderData) if state.traderData != "" else {}
         new_trader_data = {}
