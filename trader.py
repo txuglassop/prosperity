@@ -495,9 +495,9 @@ class PicnicBasket1Strategy(Strategy):
         to_buy = self.limit - self.position
         to_sell = self.limit + self.position
 
-        # best value 66
-        buy_window = 66
-        sell_window = 66
+        # best value 50
+        buy_window = 50
+        sell_window = 50
 
         if diff >= sell_window:
             # basket is overvalued - we go short
@@ -526,8 +526,8 @@ class PicnicBasket2Strategy(Strategy):
         diff = pb2 - 4 * croissants - 2 * jams
         
         # best value 62
-        buy_window = 62
-        sell_window = 62
+        buy_window = 60
+        sell_window = 60
         
         to_buy = self.limit - self.position
         to_sell = self.limit + self.position
@@ -548,6 +548,7 @@ class CroissantStrategy(Strategy):
         super().__init__(symbol, limit)
 
     def act(self, state: TradingState):
+        return
         order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
@@ -587,6 +588,8 @@ class JamStrategy(Strategy):
         super().__init__(symbol, limit)
 
     def act(self, state: TradingState):
+        # dont do anything
+        return
         order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
@@ -642,8 +645,8 @@ class DjembeStrategy(Strategy):
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
         # best value
-        buy_window = 90
-        sell_window = 90
+        buy_window = 50
+        sell_window = 50
         
         to_buy = self.limit - self.position
         to_sell = self.limit + self.position
