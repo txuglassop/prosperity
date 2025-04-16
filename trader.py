@@ -730,7 +730,7 @@ class BlackScholes:
         return volatility
 
 class VolcanicRockVoucherStrategy(Strategy):
-    day = 0  # Change this for different rounds!
+    day = 3  # Change this for different rounds!
     residuals = {}
     residuals_last_updated = -1
 
@@ -815,6 +815,70 @@ class VolcanicRockVoucherStrategy(Strategy):
     def load(self, data: JSON) -> None:
         self.window = deque(data, maxlen=self.window_size)
 
+class EMAMeanReversionStrategy(Strategy):
+    def __init__(self, symbol: Symbol, limit: int, window_size=100, z_score_hard=5, z_score_soft=2):
+        super().__init__(symbol, limit)
+        self.window_size = window_size
+        self.window = deque(maxlen=window_size)
+        self.z_score_hard = z_score_hard
+        self.z_score_soft = z_score_soft
+        self.prev_ema = None
+
+    def act(self, state: TradingState):
+        if self.symbol not in state.order_depths:
+            return
+
+        mid_price = get_avg_price(state, self.symbol)
+        mid_price_round = round(mid_price)
+
+        self.window.append(mid_price)
+        if len(self.window) < self.window_size:
+            return
+
+        ema = self.calculate_ema()
+        std = np.std(self.window)
+        if std == 0:
+            return
+        
+        z_score = (mid_price - ema) / std
+
+        # Mean reversion signals
+        if z_score > self.z_score_hard:
+            max_sell_quantity = self.limit + self.position
+            self.sell(mid_price_round - 1, max_sell_quantity)
+        elif z_score > self.z_score_soft:
+            self.sell(mid_price_round, self.limit // 6)
+        elif z_score < -self.z_score_hard:
+            max_buy_quantity = self.limit - self.position
+            self.buy(mid_price_round + 1, max_buy_quantity)
+        elif z_score < -self.z_score_soft:
+            self.buy(mid_price_round, self.limit // 6)
+
+        # Exit strategy
+        if self.position / self.limit >= 0.75 and z_score > -0.5:
+            self.sell(mid_price_round, self.limit // 12)
+        elif self.position / self.limit <= -0.75 and z_score < 0.5:
+            self.buy(mid_price_round, self.limit // 12)
+        elif self.position > 0 and z_score > 0:
+            self.sell(mid_price_round, self.limit // 8)
+        elif self.position < 0 and z_score < 0:
+            self.buy(mid_price_round, self.limit // 8)
+
+        self.prev_ema = ema
+    
+    def calculate_ema(self) -> float:
+        multipler = 2 / (self.window_size + 1)
+        if self.prev_ema == None:
+            return sum(self.window) / self.window_size
+        else:
+            return self.window[-1] * multipler + self.prev_ema * (1 - multipler)
+        
+    def save(self) -> JSON:
+        return list(self.window)
+
+    def load(self, data: JSON) -> None:
+        self.window = deque(data, maxlen=self.window_size)
+
 class Trader:
     def __init__(self):
         strategies = [
@@ -828,9 +892,15 @@ class Trader:
             PicnicBasket2Strategy("PICNIC_BASKET2", limit=100),
             # VolcanicRockVoucherStrategy(strike=10_500, limit=200, window_size=100),
             # VolcanicRockVoucherStrategy(strike=10_250, limit=200, window_size=100),
-            VolcanicRockVoucherStrategy(strike=10_000, limit=200, window_size=100),
+            # VolcanicRockVoucherStrategy(strike=10_000, limit=200, window_size=100),
             # VolcanicRockVoucherStrategy(strike=9_750, limit=200, window_size=100),
-            VolcanicRockVoucherStrategy(strike=9_500, limit=200, window_size=100),
+            # VolcanicRockVoucherStrategy(strike=9_500, limit=200, window_size=100),
+            EMAMeanReversionStrategy(symbol="VOLCANIC_ROCK_VOUCHER_10500", limit=200),
+            EMAMeanReversionStrategy(symbol="VOLCANIC_ROCK_VOUCHER_10250", limit=200),
+            EMAMeanReversionStrategy(symbol="VOLCANIC_ROCK_VOUCHER_10000", limit=200),
+            EMAMeanReversionStrategy(symbol="VOLCANIC_ROCK_VOUCHER_9750", limit=200),
+            EMAMeanReversionStrategy(symbol="VOLCANIC_ROCK_VOUCHER_9500", limit=200),
+            EMAMeanReversionStrategy(symbol="VOLCANIC_ROCK", limit=400),
         ]
 
         self.strategies = {strategy.symbol: strategy for strategy in strategies}
