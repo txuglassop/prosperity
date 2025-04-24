@@ -3,6 +3,7 @@ backtester/
 env/
 
 backtests/*
+submissions/*
 
 __pycache__/
 

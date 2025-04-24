@@ -5,6 +5,7 @@ from collections import deque
 from abc import abstractmethod
 from math import log, sqrt
 
+import pandas as pd
 import numpy as np
 import json
 import jsonpickle
@@ -98,8 +99,8 @@ class Logger:
                 observation.transportFees,
                 observation.exportTariff,
                 observation.importTariff,
-                observation.sunlight,
-                observation.humidity,
+                observation.sunlightIndex,
+                observation.sugarPrice,
             ]
 
         return [observations.plainValueObservations, conversion_observations]
@@ -129,11 +130,32 @@ logger = Logger()
 ##################################################################################################################################
 ##################################################################################################################################
 
+def get_avg_price(state: TradingState, symbol: Symbol) -> float:
+    """
+    Calculates the average price of the given symbol using the buy/sell orders with the most volume.
+
+    Please check that the symbol exists in `state.order_depths` prior to calling this method.
+
+    :param order_depth: The `OrderDepth` object for a particular symbol
+    """
+    buy_orders = state.order_depths[symbol].buy_orders
+    sell_orders = state.order_depths[symbol].sell_orders
+
+    if len(buy_orders) == 0 or sum(buy_orders.values()) == 0:
+        return min(sell_orders.keys())
+    
+    if len(sell_orders) == 0 or sum(sell_orders.values()) == 0:
+        return max(buy_orders.keys())
+    
+    popular_buy_price = max(buy_orders.items(), key=lambda tup: tup[1])[0]
+    popular_sell_price = min(sell_orders.items(), key=lambda tup: tup[1])[0]
+    return (popular_buy_price + popular_sell_price) / 2
+
 class Strategy:
     """
     A generic trading class.
 
-    Need to implement the act method for any instance of this class, which defines how it takes in
+    Need to implement the `act()` method for any instance of this class, which defines how it takes in
     `TradingState` and makes trades.
 
     Use the following methods to buy/sell orders: `self.buy()`, `self.sell()`
@@ -154,6 +176,7 @@ class Strategy:
     def run(self, state: TradingState) -> list[Order]:
         self.orders = []
         self.position = state.position.get(self.symbol, 0)
+        self.order_depths = state.order_depths
         self.aggregate_buy_quantity = 0
         self.aggregate_sell_quantity = 0
 
@@ -203,21 +226,52 @@ class Strategy:
         self.orders.append(Order(self.symbol, price, -sell_quantity))
         self.aggregate_sell_quantity += sell_quantity
 
-    def get_avg_price(self, order_depth: OrderDepth) -> float:
-        """
-        Calculates the average price of the given order depth using the buy/sell orders with the most volume.
-
-        :param order_depth: The `OrderDepth` object for a particular symbol
-        """
-        popular_buy_price = max(order_depth.buy_orders.items(), key=lambda tup: tup[1])[0]
-        popular_sell_price = min(order_depth.sell_orders.items(), key=lambda tup: tup[1])[0]
-        return (popular_buy_price + popular_sell_price) / 2
-
     def save(self) -> JSON:
         return None
 
     def load(self, data: JSON) -> None:
         pass
+
+class SignalStrategy(Strategy):
+    def __init__(self, symbol: Symbol, limit: int):
+        super().__init__(symbol, limit)
+        self.prev_signal = 0
+
+    @abstractmethod
+    def get_signal(self, state: TradingState) -> int:
+        """
+        1 = "LONG"
+        0 = "HOLD"
+        -1 = "SHORT"
+        """
+        raise NotImplementedError()
+    
+    def act(self, state: TradingState) -> None:
+        if self.symbol not in state.order_depths:
+            return
+        
+        signal = self.get_signal(state)
+
+        buy_orders = state.order_depths[self.symbol].buy_orders
+        sell_orders = state.order_depths[self.symbol].sell_orders
+
+        if signal == 1 and self.position != self.limit and len(sell_orders) != 0 and sum(sell_orders.values()) != 0:
+            target_quantity = self.limit - self.position
+            for ask, ask_quantity in sorted(sell_orders.items(), key=lambda item: item[0]):
+                if target_quantity > 0:
+                    quantity = min(target_quantity, abs(ask_quantity))
+                    self.buy(ask, quantity)
+                    target_quantity -= quantity
+
+        if signal == -1 and self.position != -self.limit and len(buy_orders) != 0 and sum(buy_orders.values()) != 0:
+            target_quantity = self.limit + self.position
+            for bid, bid_quantity in sorted(buy_orders.items(), key=lambda item: -item[0]):
+                if target_quantity > 0:
+                    quantity = min(target_quantity, abs(bid_quantity))
+                    self.sell(bid, quantity)
+                    target_quantity -= quantity
+
+        self.prev_signal = signal
 
 class RainforestResinStrategy(Strategy):
     """
@@ -397,84 +451,23 @@ class KelpStrategy(Strategy):
         vwa_bid = np.average(list(order_depth.buy_orders.keys()), weights=list(order_depth.buy_orders.values()))
         return (vwa_ask + vwa_bid) / 2
 
-class SquidInkStrategy(Strategy):
-    def __init__(self, symbol: Symbol, limit: int, window_size=50):
-        """
-        :param window_size: Window stores last `window_size` mid prices
-        """
+class SquidInkStrategy(SignalStrategy):
+    def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
-        self.window_size = window_size
-        self.window = deque(maxlen=window_size)
 
-    def act(self, state: TradingState) -> None:
-        base_value = 2000
-        
-        order_depth = state.order_depths[self.symbol]
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
+    def get_signal(self, state: TradingState) -> int:
+        if self.symbol not in state.market_trades:
+            return 0
 
-        # Calculate current mid price
-        hit_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-        hit_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-        mid_price = (hit_buy_price + hit_sell_price) / 2
-        self.window.append(mid_price)
+        market_trades = state.market_trades[self.symbol]
 
-        # Mean is just simple moving average
-        mean = np.mean(self.window)
+        for trade in market_trades:
+            if trade.seller == "Olivia" and trade.buyer == "Charlie":
+                return -1
+            elif trade.seller == "Charlie" and trade.buyer == "Olivia":
+                return 1
         
-        # Find out how many items we can buy/sell
-        pos_window_size = 120
-        pos_window_max_var = 200
-        pos_window_center = self.limit * (base_value - mean) / pos_window_max_var
-        pos_window_bottom = max(-self.limit, pos_window_center - pos_window_size / 2)
-        pos_window_top = min(self.limit, pos_window_center + pos_window_size / 2)
-        
-        to_buy = max(pos_window_top - self.position, 0)
-        to_sell = max(-pos_window_bottom + self.position, 0)
-        
-        inventory_ratio = self.position / self.limit
-        if inventory_ratio >= 0:
-            sell_limit_factor = max((1 - inventory_ratio) ** 6,0)
-            buy_limit_factor = 1 + sell_limit_factor
-        else:
-            buy_limit_factor = max((1 + inventory_ratio) ** 6,0)
-            sell_limit_factor = 1 + buy_limit_factor
-        
-        buy_buffer = 5
-        buy_base_value_diff_factor = 3.75
-        buy_weighting = 1 + (buy_base_value_diff_factor * (hit_sell_price / base_value - 1))
-        
-        # Smaller buy buffer means we buy more!!!
-        # buy_weighting < 1 if hit sell price is below base_value (buy more when price below base)
-        # buy_limit_factor < 1 if we are negative position (buy more when we are short)
-        adj_buy_buffer = buy_buffer * buy_weighting * buy_limit_factor
-        best_buy_price = round(mean - adj_buy_buffer)
-        
-        sell_buffer = 5
-        sell_base_value_diff_factor = 3.75
-        sell_weighting = 1 - (sell_base_value_diff_factor * (hit_buy_price / base_value - 1))
-        
-        # Smaller sell buffer means we sell more!!!
-        # sell_weighting < 1 if hit sell price is above base_value (sell more when price above base)
-        # sell_limit_factor < 1 if we are positive position (sell more when we have shit to sell)
-        adj_sell_buffer = sell_buffer * sell_weighting * sell_limit_factor
-        best_sell_price = round(mean + adj_sell_buffer)
-        
-        if to_buy > 0:
-            popular_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
-            price = min(best_buy_price, popular_buy_price + 1)
-            self.buy(price, to_buy) 
-
-        if to_sell > 0:
-            popular_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
-            price = max(best_sell_price, popular_sell_price - 1)
-            self.sell(price, to_sell) 
-
-    def save(self) -> JSON:
-        return list(self.window)
-
-    def load(self, data: JSON) -> None:
-        self.window = deque(data, maxlen=self.window_size)
+        return self.prev_signal
 
 class PicnicBasket1Strategy(Strategy):
     def __init__(self, symbol: Symbol, limit: int):
@@ -485,10 +478,10 @@ class PicnicBasket1Strategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1']):
             return
 
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        croissants = get_avg_price(state, 'CROISSANTS')
+        djembes = get_avg_price(state, 'DJEMBES')
+        jams = get_avg_price(state, 'JAMS')
+        pb1 = get_avg_price(state, 'PICNIC_BASKET1')
 
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
@@ -499,12 +492,12 @@ class PicnicBasket1Strategy(Strategy):
         buy_window = 50
         sell_window = 50
 
-        if diff >= sell_window:
+        if diff >= sell_window and to_sell > 0:
             # basket is overvalued - we go short
             # take min price so we end up going as short as possible
             price = min(order_depth.buy_orders.keys())
             self.sell(price, to_sell)
-        elif diff <= -buy_window:
+        elif diff <= -buy_window and to_buy > 0:
             # basket is undervalued - we go long
             # take max price so we end up going as long as possible
             price = max(order_depth.sell_orders.keys())
@@ -519,86 +512,62 @@ class PicnicBasket2Strategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'JAMS', 'PICNIC_BASKET2']):
             return
         
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
+        croissants = get_avg_price(state, 'CROISSANTS')
+        jams = get_avg_price(state, 'JAMS')
+        pb2 = get_avg_price(state, 'PICNIC_BASKET2')
 
         diff = pb2 - 4 * croissants - 2 * jams
         
-        # best value 62
-        buy_window = 60
-        sell_window = 60
+        # best value 60
+        buy_window = 62
+        sell_window = 62
         
         to_buy = self.limit - self.position
         to_sell = self.limit + self.position
 
-        if diff >= sell_window:
+        if diff >= sell_window and to_sell > 0:
             # basket is obervalued - we go short
             # take min price so we end up going as short as possible
             price = min(order_depth.buy_orders.keys())
             self.sell(price, to_sell)
-        elif diff <= -buy_window:
+        elif diff <= -buy_window and to_buy > 0:
             # basket is undervalued - we go long
             # take max price so we end up going as long as possible
             price = max(order_depth.sell_orders.keys())
             self.buy(price, to_buy)
 
-class CroissantStrategy(Strategy):
+class CroissantStrategy(SignalStrategy):
     def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
 
-    def act(self, state: TradingState):
-        return
-        order_depth = state.order_depths[self.symbol]
-        if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
-            return
-        
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
-        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
+    def get_signal(self, state: TradingState) -> int:
+        if self.symbol not in state.market_trades:
+            return 0
 
-        diff1 = pb1 - 6 * croissants - 3 * jams - djembes
-        diff2 = pb2 - 4 * croissants - 2 * jams
+        market_trades = state.market_trades[self.symbol]
 
-        # if diff1 and diff2 imply different things about the underlying...
-        # do absolutely nothing!
-        if (diff1 > 0 and diff2 < 0) or (diff1 < 0 and diff2 > 0):
-            return
+        for trade in market_trades:
+            if trade.seller == "Olivia" and trade.buyer == "Caesar":
+                return -1
+            elif trade.seller == "Caesar" and trade.buyer == "Olivia":
+                return 1
         
-        # we only enter a position if both baskets indicate yes!
-        buy_window = 50
-        sell_window = 50
-        
-        to_buy = self.limit - self.position
-        to_sell = self.limit + self.position
+        return self.prev_signal
 
-        if diff1 >= buy_window and diff2 >= buy_window:
-            # croissant is undervalued - we go long
-            price = max(order_depth.buy_orders.keys())
-            self.buy(price + 1, to_buy)
-        elif diff1 <= -sell_window and diff2 <= -sell_window:
-            # croissant is overvalued - we go short
-            price = min(order_depth.sell_orders.keys())
-            self.sell(price - 1, to_sell)
-        
 class JamStrategy(Strategy):
     def __init__(self, symbol: Symbol, limit: int):
         super().__init__(symbol, limit)
 
     def act(self, state: TradingState):
-        # dont do anything
-        return
         order_depth = state.order_depths[self.symbol]
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2']):
             return
 
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
-        pb2 = self.get_avg_price(state.order_depths['PICNIC_BASKET2'])
+        croissants = get_avg_price(state, 'CROISSANTS')
+        djembes = get_avg_price(state, 'DJEMBES')
+        jams = get_avg_price(state, 'JAMS')
+        pb1 = get_avg_price(state, 'PICNIC_BASKET1')
+        pb2 = get_avg_price(state, 'PICNIC_BASKET2')
 
         diff1 = pb1 - 6 * croissants - 3 * jams - djembes
         diff2 = pb2 - 4 * croissants - 2 * jams
@@ -609,17 +578,17 @@ class JamStrategy(Strategy):
             return
         
         # we only enter a position if both baskets indicate yes!
-        buy_window = 110
-        sell_window = 80
+        buy_window = 30
+        sell_window = 30
         
         to_buy = self.limit - self.position
         to_sell = self.limit + self.position
 
-        if diff1 >= buy_window and diff2 >= buy_window:
+        if diff1 >= buy_window and diff2 >= buy_window and to_buy > 0:
             # jam is undervalued - we go long
             price = max(order_depth.buy_orders.keys())
             self.buy(price, to_buy)
-        elif diff1 <= -sell_window and diff2 <= -sell_window:
+        elif diff1 <= -sell_window and diff2 <= -sell_window and to_sell > 0:
             # jam is overvalued - we go short
             price = min(order_depth.sell_orders.keys())
             self.sell(price, to_sell)
@@ -637,25 +606,25 @@ class DjembeStrategy(Strategy):
         if any(symbol not in state.order_depths for symbol in ['CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1']):
             return
         
-        croissants = self.get_avg_price(state.order_depths['CROISSANTS'])
-        djembes = self.get_avg_price(state.order_depths['DJEMBES'])
-        jams = self.get_avg_price(state.order_depths['JAMS'])
-        pb1 = self.get_avg_price(state.order_depths['PICNIC_BASKET1'])
+        croissants = get_avg_price(state, 'CROISSANTS')
+        djembes = get_avg_price(state, 'DJEMBES')
+        jams = get_avg_price(state, 'JAMS')
+        pb1 = get_avg_price(state, 'PICNIC_BASKET1')
         
         diff = pb1 - 6 * croissants - 3 * jams - djembes
 
         # best value
-        buy_window = 50
-        sell_window = 50
+        buy_window = 90
+        sell_window = 90
         
         to_buy = self.limit - self.position
         to_sell = self.limit + self.position
 
-        if diff >= buy_window:
+        if diff >= buy_window and to_buy > 0:
             # djembe is undervalued - we go long
             price = max(order_depth.buy_orders.keys())
             self.buy(price, to_buy)
-        elif diff <= -sell_window:
+        elif diff <= -sell_window and to_sell > 0:
             # djembe is overvalued - we go short
             price = min(order_depth.sell_orders.keys())
             self.sell(price, to_sell)
@@ -669,38 +638,38 @@ class BlackScholes:
     """
     @staticmethod
     def call_price(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         d2 = d1 - volatility * sqrt(time_to_expiry)
         return spot * NormalDist().cdf(d1) - strike * NormalDist().cdf(d2)
     
     @staticmethod
     def delta(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return NormalDist().cdf(d1)
     
     @staticmethod
     def gamma(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return NormalDist().pdf(d1) / (spot * volatility * sqrt(time_to_expiry))
 
     @staticmethod
     def vega(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return spot * NormalDist().pdf(d1) * sqrt(time_to_expiry)
     
     @staticmethod
     def theta(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d1 = (log(spot) - log(strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d1 = (log(spot / strike) + (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return -(spot * NormalDist().pdf(d1) * volatility) / (2 * sqrt(time_to_expiry))
     
     @staticmethod
     def rho(spot: float, strike: float, time_to_expiry: float, volatility: float) -> float:
-        d2 = (log(spot) - log(strike) - (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
+        d2 = (log(spot / strike) - (0.5 * volatility * volatility) * time_to_expiry) / (volatility * sqrt(time_to_expiry))
         return strike * time_to_expiry * NormalDist().cdf(d2)
 
     @staticmethod
     def implied_volatility(call_price: float, spot: float, strike: float, time_to_expiry: float, max_iterations=200, tolerance=1e-10) -> float:
-        low_vol = 0.01
+        low_vol = 1e-6
         high_vol = 1.0
 
         # Use mid point as initial guess
@@ -719,35 +688,211 @@ class BlackScholes:
 
         return volatility
 
+class VolcanicRockVoucherStrategy(Strategy):
+    day = 3  # Change this for different rounds!
+    residuals = {}
+    residuals_last_updated = -1
+
+    def __init__(self, strike: int, limit: int, window_size=200):
+        super().__init__(f"VOLCANIC_ROCK_VOUCHER_{strike}", limit)
+        self.strike = strike
+        self.window_size = window_size
+        self.window = deque(maxlen=window_size)
+    
+    @classmethod
+    def get_residuals(cls, state: TradingState) -> dict[int, float]:
+        if cls.residuals_last_updated == state.timestamp:
+            return cls.residuals
+        
+        cls.residuals_last_updated = state.timestamp
+
+        order_depths = state.order_depths
+        strike_prices = [10_500, 10_250, 10_000, 9_750, 9_500]
+
+        # Check all symbols are in the order_depth
+        symbols = ["VOLCANIC_ROCK"] + [f"VOLCANIC_ROCK_VOUCHER_{strike}" for strike in strike_prices]
+        if any(symbol not in order_depths for symbol in symbols):
+            cls.residuals = {}
+            return cls.residuals
+
+        rock_price = get_avg_price(state, "VOLCANIC_ROCK")
+        tte = (8 - cls.day) / 365 - state.timestamp / 1_000_000 / 365
+
+        df = pd.DataFrame({'strike': strike_prices})
+
+        for idx, row in df.iterrows():
+            strike = row['strike']
+
+            voucher_price = get_avg_price(state, f"VOLCANIC_ROCK_VOUCHER_{strike}")
+
+            m_t = np.log(strike / rock_price) / tte
+            v_t = BlackScholes.implied_volatility(voucher_price, rock_price, strike, tte)
+
+            # Ignore outliers
+            if v_t < 0.01:
+                cls.residuals = {}
+                return cls.residuals
+            
+            df.at[idx, 'm_t'] = m_t
+            df.at[idx, 'v_t'] = v_t
+
+        # Fit parabolic curve to m_t vs. v_t
+        coeffs = np.polyfit(df['m_t'], df['v_t'], 2)
+
+        df['residuals'] = df.apply(lambda row: row['v_t'] - np.polyval(coeffs, row['m_t']), axis=1)
+        cls.residuals = dict(zip(df['strike'], df['residuals']))
+        return cls.residuals
+
+    def act(self, state: TradingState) -> None:
+        residuals = self.__class__.get_residuals(state)
+        if self.strike not in residuals:
+            return
+        
+        # Wait for more data
+        if len(self.window) < self.window_size:
+            self.window.append(residuals[self.strike])
+            return
+        
+        mean = np.mean(self.window)
+        std = np.std(self.window)
+        z_score = (residuals[self.strike] - mean) / std
+        self.window.append(residuals[self.strike])
+
+        buy_orders = self.order_depths[self.symbol].buy_orders
+        sell_orders = self.order_depths[self.symbol].sell_orders
+
+        if z_score > 2 and len(buy_orders) > 0 and sum(buy_orders.values()) != 0:
+            best_bid, best_bid_quantity = sorted(buy_orders.items(), key=lambda item: -item[0])[0]
+            self.sell(best_bid, abs(best_bid_quantity))
+        elif z_score < -2 and len(sell_orders) > 0 and sum(sell_orders.values()) != 0:
+            best_ask, best_ask_quantity = sorted(sell_orders.items(), key=lambda item: item[0])[0]
+            self.buy(best_ask, abs(best_ask_quantity))
+
+    def save(self) -> JSON:
+        return list(self.window)
+
+    def load(self, data: JSON) -> None:
+        self.window = deque(data, maxlen=self.window_size)
+
+class EMAMeanReversionStrategy(Strategy):
+    def __init__(self, symbol: Symbol, limit: int, window_size=100, z_score_hard=5, z_score_soft=2):
+        super().__init__(symbol, limit)
+        self.window_size = window_size
+        self.window = deque(maxlen=window_size)
+        self.z_score_hard = z_score_hard
+        self.z_score_soft = z_score_soft
+        self.prev_ema = None
+
+    def act(self, state: TradingState):
+        if self.symbol not in state.order_depths:
+            return
+
+        mid_price = get_avg_price(state, self.symbol)
+        mid_price_round = round(mid_price)
+
+        self.window.append(mid_price)
+        if len(self.window) < self.window_size:
+            return
+
+        ema = self.calculate_ema()
+        std = np.std(self.window)
+        if std == 0:
+            return
+        
+        z_score = (mid_price - ema) / std
+
+        # Mean reversion signals
+        if z_score > self.z_score_hard:
+            max_sell_quantity = self.limit + self.position
+            self.sell(mid_price_round - 1, max_sell_quantity)
+        elif z_score > self.z_score_soft:
+            self.sell(mid_price_round, self.limit // 6)
+        elif z_score < -self.z_score_hard:
+            max_buy_quantity = self.limit - self.position
+            self.buy(mid_price_round + 1, max_buy_quantity)
+        elif z_score < -self.z_score_soft:
+            self.buy(mid_price_round, self.limit // 6)
+
+        # Exit strategy
+        if self.position / self.limit >= 0.75 and z_score > -0.5:
+            self.sell(mid_price_round, self.limit // 12)
+        elif self.position / self.limit <= -0.75 and z_score < 0.5:
+            self.buy(mid_price_round, self.limit // 12)
+        elif self.position > 0 and z_score > 0:
+            self.sell(mid_price_round, self.limit // 8)
+        elif self.position < 0 and z_score < 0:
+            self.buy(mid_price_round, self.limit // 8)
+
+        self.prev_ema = ema
+    
+    def calculate_ema(self) -> float:
+        multipler = 2 / (self.window_size + 1)
+        if self.prev_ema == None:
+            return sum(self.window) / self.window_size
+        else:
+            return self.window[-1] * multipler + self.prev_ema * (1 - multipler)
+        
+    def save(self) -> JSON:
+        return list(self.window)
+
+    def load(self, data: JSON) -> None:
+        self.window = deque(data, maxlen=self.window_size)
+
+class MacaronsStrategy(Strategy):
+    def __init__(self, symbol: Symbol, limit: int):
+        super().__init__(symbol, limit)
+
+    def act(self, state: TradingState):
+        obs = state.observations.conversionObservations.get(self.symbol, None)
+        if obs == None:
+            return
+        
+        if self.symbol not in state.order_depths:
+            return
+        
+        buy_orders = state.order_depths[self.symbol].buy_orders
+        sell_orders = state.order_depths[self.symbol].sell_orders
+
+        if len(buy_orders) == 0 or sum(buy_orders.values()) == 0:
+            return
+        
+        if len(sell_orders) == 0 or sum(sell_orders.values()) == 0:
+            return
+        
+        archipelagoBidPrice, archipelageBidQuantity = sorted(buy_orders.items(), key=lambda item: -item[0])[0]
+        archipelageAskPrice, archipelageAskQuantity = sorted(sell_orders.items(), key=lambda item: item[0])[0]
+        
+        conversionBuyCost = obs.askPrice + obs.transportFees + obs.importTariff
+        conversionSellRevenue = obs.bidPrice - obs.transportFees - obs.exportTariff - 0.1
+
+        if archipelagoBidPrice > conversionBuyCost:
+            quantity = min(abs(archipelageBidQuantity), 10)
+            self.sell(archipelagoBidPrice, quantity)
+        elif conversionSellRevenue > archipelageAskPrice:
+            quantity = min(abs(archipelageAskQuantity), 10)
+            self.buy(archipelageAskPrice, quantity)
+
 class Trader:
     def __init__(self):
-        limits = {
-            "RAINFOREST_RESIN":50,
-            "KELP":50,
-            "SQUID_INK":50,
-            "CROISSANTS":250,
-            "JAMS":350,
-            "DJEMBES":60,
-            "PICNIC_BASKET1":60,
-            "PICNIC_BASKET2":100,
-            "VOLCANIC_ROCK": 400,
-            "VOLCANIC_ROCK_VOUCHER_9500": 200,
-            "VOLCANIC_ROCK_VOUCHER_9750": 200,
-            "VOLCANIC_ROCK_VOUCHER_10000": 200,
-            "VOLCANIC_ROCK_VOUCHER_10250": 200,
-            "VOLCANIC_ROCK_VOUCHER_10500": 200,
-        }
+        strategies = [
+            RainforestResinStrategy("RAINFOREST_RESIN", limit=50),
+            KelpStrategy("KELP", limit=50),
+            SquidInkStrategy("SQUID_INK", limit=50),
+            CroissantStrategy("CROISSANTS", limit=250),
+            JamStrategy("JAMS", limit=350),
+            DjembeStrategy("DJEMBES", limit=60),
+            PicnicBasket1Strategy("PICNIC_BASKET1", limit=60),
+            PicnicBasket2Strategy("PICNIC_BASKET2", limit=100),
+            EMAMeanReversionStrategy("VOLCANIC_ROCK_VOUCHER_10500", limit=200),
+            EMAMeanReversionStrategy("VOLCANIC_ROCK_VOUCHER_10250", limit=200),
+            EMAMeanReversionStrategy("VOLCANIC_ROCK_VOUCHER_10000", limit=200),
+            EMAMeanReversionStrategy("VOLCANIC_ROCK_VOUCHER_9750", limit=200),
+            EMAMeanReversionStrategy("VOLCANIC_ROCK_VOUCHER_9500", limit=200),
+            EMAMeanReversionStrategy("VOLCANIC_ROCK", limit=400),
+            # MacaronsStrategy("MAGNIFICENT_MACARONS", limit=75),
+        ]
 
-        self.strategies = {symbol: clazz(symbol, limits[symbol]) for symbol, clazz in {
-            "RAINFOREST_RESIN": RainforestResinStrategy,
-            "KELP": KelpStrategy,
-            "SQUID_INK": SquidInkStrategy,
-            "CROISSANTS": CroissantStrategy,
-            "JAMS": JamStrategy,
-            "DJEMBES": DjembeStrategy,
-            "PICNIC_BASKET1": PicnicBasket1Strategy,
-            "PICNIC_BASKET2": PicnicBasket2Strategy
-        }.items()}
+        self.strategies = {strategy.symbol: strategy for strategy in strategies}
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         orders: dict[Symbol, list[Order]] = {}
@@ -759,13 +904,16 @@ class Trader:
         for symbol, strategy in self.strategies.items():
             if symbol in old_trader_data:
                 strategy.load(old_trader_data.get(symbol, None))
-
             if symbol in state.order_depths:
                 orders[symbol] = strategy.run(state)
-
             new_trader_data[symbol] = strategy.save()
 
         trader_data = json.dumps(new_trader_data, separators=(",", ":"))
+
+        # if "MAGNIFICENT_MACARONS" in orders:
+        #     conversions = -self.strategies['MAGNIFICENT_MACARONS'].position
+
+        # logger.print(f"CONVERSIONS: {conversions}")
 
         logger.flush(state, orders, conversions, trader_data)
         return orders, conversions, trader_data
